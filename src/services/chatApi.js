@@ -1,4 +1,4 @@
-import { getResponseForQuery } from '../mockData';
+import { getResponseForQuery } from '../mocks/mockData';
 
 // Configurable base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'mock';

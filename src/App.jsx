@@ -5,7 +5,7 @@ import ChatContainer from './components/ChatContainer';
 import NetworkGraph from './components/NetworkGraph';
 import InspectorPanel from './components/InspectorPanel';
 import { chat, exportHistory, getToken, getRole, getUsername, isAuthenticated } from './services/chatApi';
-import { FULL_NETWORK } from './mockData';
+import { FULL_NETWORK } from './mocks/mockData';
 
 function App() {
   const [auth, setAuth] = useState({

@@ -1,6 +1,7 @@
 // Mock database fixture containing a realistic police-case-network shape.
 // A few repeat accused across cases, shared locations, and realistic connections.
 
+// ASSUMED SHAPE — confirm with backend
 export const FULL_NETWORK = {
   nodes: [
     { id: "case_101", label: "Case 101: Sovereign Trust Bank Robbery", type: "case", details: "Armed heist at Sovereign Trust Bank, Downtown Metro District on May 12, 2026. Estimated loss of $500,000 in diamonds and cash. Chen Syndicate involvement suspected." },

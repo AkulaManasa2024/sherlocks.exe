@@ -116,6 +116,7 @@ function App() {
 
       setMessages(prev => [...prev, {
         sender: 'system',
+        question: text,
         text: answerText,
         zcql_query: response?.zcql_query || null,
         sources: Array.isArray(response?.sources) ? response.sources : [],
@@ -134,6 +135,7 @@ function App() {
       // Safety net — chat() should never throw, but just in case
       setMessages(prev => [...prev, {
         sender: 'system',
+        question: text,
         text: "Based on Karnataka SCRB CaseMaster records, 26 cases have been charge-sheeted in the past 12 months. Charge sheet rate: 42%, above the national average.",
         zcql_query: "SELECT COUNT(CaseMasterID) FROM CaseMaster WHERE CaseStatusID = '2'",
         sources: ["SCRB CaseMaster Database", "KSP Police Station Registry"],

@@ -5,6 +5,8 @@ import {
   Mic, MicOff, Volume2, VolumeX
 } from 'lucide-react';
 
+import { generateReport } from '../utils/generatePdf';
+
 /* ─── Voice Synthesis Helper (Text-to-Speech) ────────── */
 const speakAnswer = (textToSpeak) => {
   if (!('speechSynthesis' in window)) return;
@@ -48,13 +50,21 @@ function CopyBtn({ text, label = 'Copy' }) {
 }
 
 /* ─── PDF Download Button ─────────────────────────────── */
-function PdfDownloadBtn({ base64 }) {
-  if (!base64) return null;
+function PdfDownloadBtn({ question, text, zcql_query, result_rows, sources, base64 }) {
   const handleDownload = () => {
     try {
-      window.open('data:application/pdf;base64,' + base64);
+      generateReport({
+        question: question || 'KSP Crime Data Query',
+        answer: text,
+        zcql: zcql_query,
+        rows: result_rows,
+        sources: sources
+      });
     } catch (e) {
-      console.error('PDF open failed', e);
+      console.error('Frontend PDF export failed, falling back to base64', e);
+      if (base64) {
+        window.open('data:application/pdf;base64,' + base64);
+      }
     }
   };
   return (
@@ -198,22 +208,24 @@ function AuditTrail({ sources }) {
 }
 
 /* ─── Full Message Footer ─────────────────────────────── */
-function MessageFooter({ zcql_query, sources, result_rows, pdf_base64, isError, attempted_query }) {
+function MessageFooter({ question, text, zcql_query, sources, result_rows, pdf_base64, isError, attempted_query }) {
   const hasZcql = Boolean(zcql_query) || Boolean(attempted_query);
   const hasSources = Array.isArray(sources) && sources.length > 0;
   const hasRows = Array.isArray(result_rows) && result_rows.length > 0;
-  const hasPdf = Boolean(pdf_base64);
-
-  if (!hasZcql && !hasSources && !hasRows && !hasPdf) return null;
   const displayZcql = zcql_query || attempted_query;
 
   return (
     <div className="msg-footer">
-      {hasPdf && (
-        <div className="msg-footer-pdf-row">
-          <PdfDownloadBtn base64={pdf_base64} />
-        </div>
-      )}
+      <div className="msg-footer-pdf-row">
+        <PdfDownloadBtn
+          question={question}
+          text={text}
+          zcql_query={displayZcql}
+          result_rows={result_rows}
+          sources={sources}
+          base64={pdf_base64}
+        />
+      </div>
       {hasRows && <ResultTable resultRows={result_rows} />}
       {displayZcql && <ZcqlBlock zcql={displayZcql} />}
       {hasSources && <AuditTrail sources={sources} />}
@@ -387,6 +399,8 @@ export default function ChatContainer({ messages, onSendMessage, loading }) {
                 {/* Footer: PDF, table, ZCQL, audit */}
                 {msg.sender === 'system' && (
                   <MessageFooter
+                    question={msg.question}
+                    text={msg.text}
                     zcql_query={msg.zcql_query}
                     sources={msg.sources}
                     result_rows={msg.result_rows}

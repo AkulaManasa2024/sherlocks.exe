@@ -62,15 +62,18 @@ export default function NetworkGraph({ graph, onSelectNode, selectedNode }) {
   // Node drawing logic on canvas
   const drawNode = (node, ctx, globalScale) => {
     const isSelected = selectedNode && node.id === selectedNode.id;
-    
-    // Theme colors matching index.css vars
-    let color = '#38bdf8'; // fallback blue
-    if (node.type === 'case') color = '#8b5cf6'; // Case - Violet
-    else if (node.type === 'accused') color = '#ef4444'; // Accused - Red
-    else if (node.type === 'victim') color = '#f59e0b'; // Victim - Amber
-    else if (node.type === 'location') color = '#10b981'; // Location - Emerald
 
-    const radius = node.type === 'case' ? 10 : 7.5;
+    // Color-code by backend type string (backend uses PascalCase)
+    const typeNorm = (node.type || '').toLowerCase();
+    let color = '#38bdf8'; // fallback blue
+    if (typeNorm === 'case') color = '#38bdf8';                // Case - Sky Blue
+    else if (typeNorm === 'policestation') color = '#f59e0b';  // PoliceStation - Amber
+    else if (typeNorm === 'accused') color = '#ef4444';        // Accused - Red
+    else if (typeNorm === 'victim') color = '#10b981';         // Victim - Emerald Green
+    else if (typeNorm === 'location') color = '#8b5cf6';       // Location - Violet
+
+    const isCase = typeNorm === 'case';
+    const radius = isCase ? 11 : 8;
     const finalRadius = isSelected ? radius * 1.35 : radius;
 
     // Glowing border for selected node
@@ -128,23 +131,27 @@ export default function NetworkGraph({ graph, onSelectNode, selectedNode }) {
       <div className="graph-legend glass-panel">
         <span className="legend-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Network size={12} style={{ color: 'var(--accent-blue)' }} />
-          <span>Intelligence Legend</span>
+          <span>Node Legend</span>
         </span>
         <div className="legend-item">
-          <span className="legend-color case"></span>
+          <span className="legend-color" style={{ background: '#38bdf8', boxShadow: '0 0 6px #38bdf8' }}></span>
           <span>Case Records</span>
         </div>
         <div className="legend-item">
-          <span className="legend-color accused"></span>
-          <span>Accused Suspects</span>
+          <span className="legend-color" style={{ background: '#ef4444', boxShadow: '0 0 6px #ef4444' }}></span>
+          <span>Accused Persons</span>
         </div>
         <div className="legend-item">
-          <span className="legend-color victim"></span>
-          <span>Victims / Complainants</span>
+          <span className="legend-color" style={{ background: '#10b981', boxShadow: '0 0 6px #10b981' }}></span>
+          <span>Victims</span>
         </div>
         <div className="legend-item">
-          <span className="legend-color location"></span>
-          <span>Locations of Interest</span>
+          <span className="legend-color" style={{ background: '#f59e0b', boxShadow: '0 0 6px #f59e0b' }}></span>
+          <span>Police Stations</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-color" style={{ background: '#8b5cf6', boxShadow: '0 0 6px #8b5cf6' }}></span>
+          <span>Locations</span>
         </div>
       </div>
 

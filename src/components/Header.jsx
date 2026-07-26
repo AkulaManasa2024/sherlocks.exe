@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { clearAuth } from '../services/chatApi';
-import { LogOut, FileText, Server, UserCheck, ShieldAlert } from 'lucide-react';
+import { LogOut, FileText, UserCheck, ShieldAlert, Radio } from 'lucide-react';
 
 export default function Header({ username, role, conversationId, onLogout, onExport }) {
   const [exporting, setExporting] = useState(false);
-  const isMock = (import.meta.env.VITE_API_BASE_URL || 'mock') === 'mock';
 
   const handleExport = async () => {
     if (!conversationId) return;
@@ -26,55 +25,60 @@ export default function Header({ username, role, conversationId, onLogout, onExp
   return (
     <header className="app-header">
       <div className="header-left">
-        <div className="logo-badge">
-          <ShieldAlert size={18} />
+        <div className="logo-badge animated-pulse-ring">
+          <ShieldAlert size={20} />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span className="app-title" style={{ fontWeight: 700 }}>KSP COMMAND CENTER</span>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            Crime Network Analytics & Query Engine
+        <div className="header-title-group">
+          <span className="app-title">KSP COMMAND CENTER</span>
+          <span className="app-subtitle">
+            Karnataka State Police · SCRB Crime Intelligence Platform
           </span>
         </div>
       </div>
 
-      <div className="header-right">
-        {/* Environment Status Badge */}
-        <div className="token-indicator" title={isMock ? "Running on Mock Data seam" : "Connected to live API backend"}>
-          <span className={`token-dot ${isMock ? 'expired' : ''}`} style={{ backgroundColor: isMock ? '#ef4444' : '#10b981' }}></span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-            {isMock ? 'MOCK SYSTEM' : 'LIVE SYSTEM'}
-          </span>
+      <div className="header-right-nav">
+        {/* Live System Indicator Badge */}
+        <div className="status-badge-live" title="Connected to Live Zoho Catalyst Database">
+          <Radio size={12} className="live-radio-pulse" />
+          <span>LIVE SYSTEM</span>
         </div>
 
-        {/* User profile & Role badge */}
+        <div className="nav-divider" />
+
+        {/* User Profile & Role */}
         {username && (
-          <div className="user-profile-info" style={{ borderLeft: '1px solid var(--border-light)', paddingLeft: '16px' }}>
-            <UserCheck size={14} style={{ color: 'var(--text-secondary)' }} />
-            <span className="username-display">{username}</span>
-            <span className={`role-badge-header ${role}`}>
-              {role}
+          <div className="user-profile-badge">
+            <div className="user-avatar-circle">
+              <UserCheck size={13} />
+            </div>
+            <span className="user-name-text">{username}</span>
+            <span className={`role-chip-tag ${role || 'investigator'}`}>
+              {role || 'INVESTIGATOR'}
             </span>
           </div>
         )}
 
-        {/* Export Conversation PDF */}
+        <div className="nav-divider" />
+
+        {/* Export Brief Button */}
         <button
-          className="btn-export"
+          type="button"
+          className="header-action-btn export-btn"
           onClick={handleExport}
           disabled={exporting || !conversationId}
-          title={!conversationId ? "Start a conversation to export history" : "Export chat history to PDF"}
-          style={{ opacity: !conversationId ? 0.5 : 1, cursor: !conversationId ? 'not-allowed' : 'pointer' }}
+          title={!conversationId ? "Start a conversation to export intelligence brief" : "Export chat history to PDF"}
         >
-          <FileText size={14} />
-          {exporting ? 'Generating PDF...' : 'Export Brief'}
+          <FileText size={13} />
+          <span>{exporting ? 'Exporting...' : 'Export Brief'}</span>
         </button>
 
-        {/* Logout Button */}
-        <button className="btn-logout" onClick={handleLogout} title="Logout of current terminal session">
-          <LogOut size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+        {/* Exit Button */}
+        <button type="button" className="header-action-btn exit-btn" onClick={handleLogout} title="Exit session">
+          <LogOut size={13} />
           <span>Exit</span>
         </button>
       </div>
     </header>
   );
 }
+

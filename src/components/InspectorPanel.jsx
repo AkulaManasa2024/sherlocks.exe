@@ -42,7 +42,7 @@ export default function InspectorPanel({ selectedNode, activeGraph, onClose, onQ
       <h3 className="node-details-title">{selectedNode.label || selectedNode.id}</h3>
       
       <p className="node-details-desc">
-        {selectedNode.details || 'No detailed dossier content loaded in this mock record.'}
+        {selectedNode.details || 'Select connections below to explore the case network, or click "Query Database" to search related records.'}
       </p>
 
       {/* Action buttons */}

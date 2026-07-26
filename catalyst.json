@@ -1,5 +1,6 @@
 {
   "client": {
-    "source": "dist"
+    "source": "dist",
+    "index": "index.html"
   }
 }

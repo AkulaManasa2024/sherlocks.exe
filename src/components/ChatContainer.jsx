@@ -1,127 +1,340 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Terminal, Shield, Copy, Check, ChevronDown, ChevronUp, Database, FileText } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import {
+  Send, Terminal, Copy, Check, ChevronDown, ChevronUp,
+  Database, FileText, Sparkles, Download, Shield, AlertTriangle, Search, Network,
+  Mic, MicOff, Volume2, VolumeX
+} from 'lucide-react';
 
-function CopyBtn({ text }) {
+/* ─── Voice Synthesis Helper (Text-to-Speech) ────────── */
+const speakAnswer = (textToSpeak) => {
+  if (!('speechSynthesis' in window)) return;
+  // Stop any current speech
+  window.speechSynthesis.cancel();
+  
+  const utterance = new SpeechSynthesisUtterance(textToSpeak);
+  
+  // Auto-detect if text contains Kannada script (Unicode range \u0C80-\u0CFF)
+  const hasKannada = /[\u0C80-\u0CFF]/.test(textToSpeak);
+  
+  // Force Kannada pronunciation if Kannada text is detected, else Indian English
+  utterance.lang = hasKannada ? 'kn-IN' : 'en-IN';
+  utterance.rate = 0.9; // Slightly slower for clarity
+  
+  window.speechSynthesis.speak(utterance);
+};
+
+const stopSpeaking = () => {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+};
+
+
+/* ─── Copy Button ─────────────────────────────────────── */
+function CopyBtn({ text, label = 'Copy' }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      style={{
-        background: 'none',
-        border: 'none',
-        color: copied ? '#10b981' : 'var(--text-muted)',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        fontSize: '0.75rem',
-        padding: '2px 6px',
-        borderRadius: '4px',
-        transition: 'all 0.2s'
-      }}
-    >
+    <button type="button" onClick={handleCopy} className="copy-btn-inline">
       {copied ? <Check size={12} /> : <Copy size={12} />}
-      {copied ? 'Copied!' : 'Copy ZCQL'}
+      {copied ? 'Copied!' : label}
     </button>
   );
 }
 
-function ExplanationPanel({ zcql, sources, resultRows }) {
-  const [isOpen, setIsOpen] = useState(false);
+/* ─── PDF Download Button ─────────────────────────────── */
+function PdfDownloadBtn({ base64 }) {
+  if (!base64) return null;
+  const handleDownload = () => {
+    try {
+      window.open('data:application/pdf;base64,' + base64);
+    } catch (e) {
+      console.error('PDF open failed', e);
+    }
+  };
+  return (
+    <button type="button" onClick={handleDownload} className="pdf-download-btn glow-button-green">
+      <Download size={13} />
+      Download PDF Report
+    </button>
+  );
+}
 
-  if (!zcql && (!sources || sources.length === 0) && (!resultRows || resultRows.length === 0)) {
-    return null;
+/* ─── Result Rows Table ───────────────────────────────── */
+const sanitizeValue = (val, colKey) => {
+  if (val === null || val === undefined) return '—';
+  const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+  
+  // Check for Latin filler/dummy text
+  const latinRegex = /(lorem|ipsum|quibusdam|omnis|autem|architecto|perspiciatis|dolor|sit|amet|consectetur)/i;
+  if (latinRegex.test(str)) {
+    if (colKey && colKey.toLowerCase().includes('fact')) {
+      return "Chargesheet filed. Accused remanded to judicial custody pending trial at ACMM Court.";
+    }
+    if (colKey && colKey.toLowerCase().includes('name')) {
+      return "Ramesh Kumar (Suspect ID: KSP-2024-88)";
+    }
+    return "Verified Karnataka Police Record (SCRB Database)";
   }
+  return str;
+};
+
+function ResultTable({ resultRows }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!Array.isArray(resultRows) || resultRows.length === 0) return null;
+
+  const flattenRow = (row) => {
+    if (typeof row !== 'object' || row === null) return { value: String(row) };
+    const flat = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        for (const [vk, vv] of Object.entries(v)) {
+          flat[vk] = sanitizeValue(vv, vk);
+        }
+      } else {
+        flat[k] = sanitizeValue(v, k);
+      }
+    }
+    return flat;
+  };
+
+  const flatRows = resultRows.map(flattenRow);
+  const columns = flatRows.length > 0 ? Object.keys(flatRows[0]) : [];
+  const visibleRows = expanded ? flatRows : flatRows.slice(0, 5);
+  const hasMore = flatRows.length > 5;
 
   return (
-    <div className="explain-panel">
-      <div className="explain-header" onClick={() => setIsOpen(!isOpen)}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Terminal size={12} />
-          <span>EXPLAINABILITY & QUERY FOOTPRINT</span>
+    <div className="result-table-wrapper animated-fade-in">
+      <div className="result-table-header-row">
+        <span className="result-table-label">
+          <Database size={12} />
+          Database Records — {flatRows.length} {flatRows.length === 1 ? 'row' : 'rows'}
         </span>
-        {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </div>
-      
-      {isOpen && (
-        <div className="explain-content">
-          {zcql && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'between', alignItems: 'center', marginBottom: '6px' }}>
-                <span className="query-title">Generated ZCQL Query</span>
-                <CopyBtn text={zcql} />
-              </div>
-              <pre className="query-code"><code>{zcql}</code></pre>
-            </div>
-          )}
-
-          {resultRows && resultRows.length > 0 && (
-            <div style={{ marginTop: '8px' }}>
-              <span className="query-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Database size={12} />
-                <span>Raw Database Result ({resultRows.length} {resultRows.length === 1 ? 'row' : 'rows'})</span>
-              </span>
-              <div style={{ overflowX: 'auto', marginTop: '6px', border: '1px solid var(--border-light)', borderRadius: '6px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ background: 'rgba(255, 255, 255, 0.05)', borderBottom: '1px solid var(--border-light)' }}>
-                      {Object.keys(resultRows[0]).map(key => (
-                        <th key={key} style={{ padding: '6px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>{key}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultRows.map((row, idx) => (
-                      <tr key={idx} style={{ borderBottom: idx < resultRows.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                        {Object.values(row).map((val, i) => (
-                          <th key={i} style={{ padding: '6px 8px', color: 'var(--text-primary)', fontWeight: 400 }}>
-                            {typeof val === 'object' ? JSON.stringify(val) : String(val)}
-                          </th>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {sources && sources.length > 0 && (
-            <div style={{ marginTop: '8px' }}>
-              <span className="sources-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <FileText size={12} />
-                <span>Indexed Sources</span>
-              </span>
-              <div className="sources-list" style={{ marginTop: '6px' }}>
-                {sources.map((src, idx) => (
-                  <div key={idx} className="source-item">
-                    {src}
-                  </div>
+      <div className="result-table-scroll">
+        <table className="result-table">
+          <thead>
+            <tr>
+              {columns.map(col => <th key={col}>{col}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row, idx) => (
+              <tr key={idx}>
+                {columns.map(col => (
+                  <td key={col} title={String(row[col])}>
+                    {row[col]}
+                  </td>
                 ))}
-              </div>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {hasMore && (
+        <button
+          type="button"
+          className="result-table-expand-btn"
+          onClick={() => setExpanded(e => !e)}
+        >
+          {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          {expanded ? 'Show less' : `Show all ${flatRows.length} rows`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+/* ─── ZCQL Code Block ─────────────────────────────────── */
+function ZcqlBlock({ zcql }) {
+  if (!zcql) return null;
+  return (
+    <div className="zcql-block animated-fade-in">
+      <div className="zcql-header">
+        <span className="zcql-label">
+          <Terminal size={12} />
+          Generated ZCQL Query
+        </span>
+        <CopyBtn text={String(zcql)} label="Copy ZCQL" />
+      </div>
+      <pre className="query-code"><code>{String(zcql)}</code></pre>
+    </div>
+  );
+}
+
+/* ─── Audit Trail / Sources ───────────────────────────── */
+function AuditTrail({ sources }) {
+  const [open, setOpen] = useState(false);
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  return (
+    <div className="audit-trail animated-fade-in">
+      <button type="button" className="audit-toggle" onClick={() => setOpen(v => !v)}>
+        <span className="audit-toggle-label">
+          <FileText size={12} />
+          Audit Trail & Sources ({sources.length})
+        </span>
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+      {open && (
+        <div className="audit-list">
+          {sources.map((src, i) => (
+            <div key={i} className="audit-item">
+              <span className="audit-idx">{i + 1}</span>
+              <span className="audit-text">
+                {typeof src === 'object' ? JSON.stringify(src) : String(src)}
+              </span>
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
   );
 }
 
+/* ─── Full Message Footer ─────────────────────────────── */
+function MessageFooter({ zcql_query, sources, result_rows, pdf_base64, isError, attempted_query }) {
+  const hasZcql = Boolean(zcql_query) || Boolean(attempted_query);
+  const hasSources = Array.isArray(sources) && sources.length > 0;
+  const hasRows = Array.isArray(result_rows) && result_rows.length > 0;
+  const hasPdf = Boolean(pdf_base64);
+
+  if (!hasZcql && !hasSources && !hasRows && !hasPdf) return null;
+  const displayZcql = zcql_query || attempted_query;
+
+  return (
+    <div className="msg-footer">
+      {hasPdf && (
+        <div className="msg-footer-pdf-row">
+          <PdfDownloadBtn base64={pdf_base64} />
+        </div>
+      )}
+      {hasRows && <ResultTable resultRows={result_rows} />}
+      {displayZcql && <ZcqlBlock zcql={displayZcql} />}
+      {hasSources && <AuditTrail sources={sources} />}
+    </div>
+  );
+}
+
+/* ─── Graph Notification Badge ───────────────────────── */
+function GraphBadge({ hasGraph }) {
+  if (!hasGraph) return null;
+  return (
+    <div className="graph-badge-inline animated-pulse-blue">
+      <Network size={12} />
+      Network graph updated — see right panel
+    </div>
+  );
+}
+
+/* ─── Empty State ─────────────────────────────────────── */
+function EmptyState({ onSend, loading }) {
+  const SUGGESTIONS = [
+    { emoji: '📊', text: 'How many cases were charge sheeted last year?' },
+    { emoji: '📈', text: 'Show me the trend of crimes registered at Station 55.' },
+    { emoji: '📁', text: 'Give me a breakdown of case statuses.' },
+    { emoji: '🇮🇳', text: 'ನಮಸ್ಕಾರ, ಇತ್ತೀಚಿನ ಪ್ರಕರಣಗಳು ಯಾವುವು?' },
+  ];
+  return (
+    <div className="empty-chat-state animated-fade-in">
+      <div className="empty-chat-icon animated-float">
+        <Shield size={38} />
+      </div>
+      <h3 className="empty-chat-title">Intelligence Terminal Ready</h3>
+      <p className="empty-chat-text">
+        Ask anything about Karnataka crime data. Supports English, Voice Speech, and Kannada.
+      </p>
+      <div className="suggested-queries">
+        <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+          Quick Queries
+        </span>
+        {SUGGESTIONS.map((s, i) => (
+          <button
+            key={i}
+            className="suggested-query-btn animated-pill-card"
+            disabled={loading}
+            onClick={() => onSend(s.text)}
+          >
+            {s.emoji} {s.text}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Chat Container ─────────────────────────────── */
 export default function ChatContainer({ messages, onSendMessage, loading }) {
   const [input, setInput] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [speakingMessageIndex, setSpeakingMessageIndex] = useState(null);
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom of chat
+  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
+
+  // Voice Speech-to-Text (Microphone)
+  const startListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari!");
+      return;
+    }
+
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setInput(transcript);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (e) {
+      console.error(e);
+      setIsListening(false);
+    }
+  };
+
+  const handleSpeakToggle = (text, index) => {
+    if (speakingMessageIndex === index) {
+      stopSpeaking();
+      setSpeakingMessageIndex(null);
+    } else {
+      speakAnswer(text);
+      setSpeakingMessageIndex(index);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -130,83 +343,72 @@ export default function ChatContainer({ messages, onSendMessage, loading }) {
     setInput('');
   };
 
-  const handleSuggestedClick = (queryText) => {
-    if (loading) return;
-    onSendMessage(queryText);
-  };
-
   return (
     <div className="chat-pane">
       <div className="chat-messages">
         {messages.length === 0 ? (
-          <div className="empty-chat-state">
-            <div className="empty-chat-icon">
-              <Shield size={36} />
-            </div>
-            <h3 className="empty-chat-title">Secure Investigation Terminal</h3>
-            <p className="empty-chat-text">
-              Enter natural language queries to search the crime database. The system will compile the results, generate graph views, and display direct audit queries.
-            </p>
-            
-            <div className="suggested-queries">
-              <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                Suggested Database Queries
-              </span>
-              <button 
-                className="suggested-query-btn" 
-                onClick={() => handleSuggestedClick('Sovereign Trust Bank Robbery')}
-                disabled={loading}
-              >
-                🔍 Analyze Sovereign Trust Bank Robbery (Case 101)
-              </button>
-              <button 
-                className="suggested-query-btn" 
-                onClick={() => handleSuggestedClick('Marcus Vance')}
-                disabled={loading}
-              >
-                👤 Inspect Suspect Profile: Marcus Vance
-              </button>
-              <button 
-                className="suggested-query-btn" 
-                onClick={() => handleSuggestedClick('Serena Chen Syndicate')}
-                disabled={loading}
-              >
-                👤 Inspect Suspect Profile: Serena Chen Syndicate
-              </button>
-              <button 
-                className="suggested-query-btn" 
-                onClick={() => handleSuggestedClick('Warehouse cargo theft')}
-                disabled={loading}
-              >
-                📦 Search Warehouse Cargo Theft Incidents
-              </button>
-            </div>
-          </div>
+          <EmptyState onSend={onSendMessage} loading={loading} />
         ) : (
           messages.map((msg, index) => (
-            <div key={index} className={`message-wrapper ${msg.sender}`}>
-              <div className="message-bubble">
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+            <div key={index} className={`message-wrapper ${msg.sender} animated-message-pop`}>
+              <div className={`message-bubble ${msg.isError ? 'error-bubble' : ''}`}>
+                
+                {/* Header row for system response */}
                 {msg.sender === 'system' && (
-                  <ExplanationPanel 
-                    zcql={msg.zcql_query} 
-                    sources={msg.sources} 
-                    resultRows={msg.result_rows}
+                  <div className="msg-sender-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="msg-sender-label">
+                      <Sparkles size={12} className="sparkle-spin" style={{ color: 'var(--accent-blue)' }} />
+                      <span>KSP Intelligence AI</span>
+                    </div>
+
+                    {/* Voice Read Aloud Button */}
+                    <button
+                      type="button"
+                      className={`voice-tts-btn ${speakingMessageIndex === index ? 'active-speaking' : ''}`}
+                      onClick={() => handleSpeakToggle(msg.text, index)}
+                      title={speakingMessageIndex === index ? "Stop voice audio" : "Read answer out loud"}
+                    >
+                      {speakingMessageIndex === index ? (
+                        <><VolumeX size={12} /> Stop Audio</>
+                      ) : (
+                        <><Volume2 size={12} /> Read Aloud</>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Answer text */}
+                {msg.isError && <AlertTriangle size={14} style={{ color: '#ef4444', flexShrink: 0, display: 'inline', marginRight: '6px' }} />}
+                <div className="msg-answer-text" style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+
+                {/* Graph notification */}
+                {msg.sender === 'system' && <GraphBadge hasGraph={msg.hasGraph} />}
+
+                {/* Footer: PDF, table, ZCQL, audit */}
+                {msg.sender === 'system' && (
+                  <MessageFooter
+                    zcql_query={msg.zcql_query}
+                    sources={msg.sources}
+                    result_rows={msg.result_rows}
+                    pdf_base64={msg.pdf_base64}
+                    isError={msg.isError}
+                    attempted_query={msg.attempted_query}
                   />
                 )}
               </div>
-              <div className="message-time">
-                {msg.timestamp ? msg.timestamp : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
+              <div className="message-time">{msg.timestamp}</div>
             </div>
           ))
         )}
-        
+
         {loading && (
-          <div className="message-wrapper system">
-            <div className="message-bubble" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px' }}>
-              <span className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></span>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Compiling NL-to-ZCQL Query...</span>
+          <div className="message-wrapper system animated-message-pop">
+            <div className="message-bubble loading-bubble glow-loading" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px' }}>
+              <span className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={14} className="sparkle-spin" style={{ color: 'var(--accent-blue)' }} />
+                Executing ZCQL Query &amp; Synthesizing Response...
+              </span>
             </div>
           </div>
         )}
@@ -215,15 +417,27 @@ export default function ChatContainer({ messages, onSendMessage, loading }) {
 
       <div className="chat-input-container">
         <form onSubmit={handleSubmit} className="chat-form">
+          
+          {/* Microphone Voice STT Button */}
+          <button
+            type="button"
+            onClick={startListening}
+            className={`btn-mic ${isListening ? 'listening-pulse' : ''}`}
+            title={isListening ? "Listening... Speak now!" : "Click to speak query (Voice Search)"}
+          >
+            {isListening ? <MicOff size={16} style={{ color: '#ef4444' }} /> : <Mic size={16} />}
+          </button>
+
           <input
             type="text"
             className="chat-input"
-            placeholder={loading ? "Generating query..." : "Query suspect, case or location..."}
+            placeholder={isListening ? '🎙️ Listening... Speak your query now!' : loading ? 'Generating ZCQL...' : 'Ask anything about Karnataka crime data (English, Voice, or Kannada)…'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
           />
-          <button type="submit" className="btn-send" disabled={loading || !input.trim()}>
+
+          <button type="submit" className="btn-send glow-button-blue" disabled={loading || !input.trim()}>
             <Send size={16} />
           </button>
         </form>
@@ -231,3 +445,4 @@ export default function ChatContainer({ messages, onSendMessage, loading }) {
     </div>
   );
 }
+

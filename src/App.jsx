@@ -4,8 +4,10 @@ import Header from './components/Header';
 import ChatContainer from './components/ChatContainer';
 import NetworkGraph from './components/NetworkGraph';
 import InspectorPanel from './components/InspectorPanel';
+import KarnatakaMap from './components/KarnatakaMap';
+import KspOverview from './components/KspOverview';
 import { chat, exportHistory, getToken, getRole, getUsername, isAuthenticated } from './services/chatApi';
-import { FULL_NETWORK } from './mocks/mockData';
+import { Network, MapPin, ShieldCheck } from 'lucide-react';
 
 function App() {
   const [auth, setAuth] = useState({
@@ -20,8 +22,10 @@ function App() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [pendingQuery, setPendingQuery] = useState(null);
+  const [activeRightTab, setActiveRightTab] = useState('overview'); // 'overview', 'graph', or 'map'
 
-  // Check auth credentials on mount
+  // Check persisted auth on mount
   useEffect(() => {
     if (isAuthenticated()) {
       setAuth({
@@ -33,119 +37,129 @@ function App() {
     }
   }, []);
 
-  // Seed default overview and network when authenticated
+  // Seed welcome message after login
   useEffect(() => {
     if (auth.isAuthenticated) {
-      setGraph(FULL_NETWORK);
+      setGraph({ nodes: [], edges: [] });
       setMessages([
         {
           sender: 'system',
-          text: "Welcome to the Police Crime Database search system. Currently indexing 3 active cases, 3 suspects, 2 corporate victims, and 3 locations. Click on any node in the graph to view intelligence reports, or type a query in the chat (e.g., 'Marcus Vance' or 'Case 101') to filter the network.",
-          zcql_query: "SELECT * FROM crime_records WHERE status = 'active';",
-          result_rows: [
-            { case_id: "case_101", status: "active", primary_suspect: "Serena Chen" },
-            { case_id: "case_102", status: "active", primary_suspect: "Serena Chen" },
-            { case_id: "case_103", status: "active", primary_suspect: "Marcus Vance" }
-          ],
-          sources: [
-            "Case File #CR-2026-101 (Sovereign Trust Bank Robbery)",
-            "Case File #CR-2026-102 (Syndicate Money Laundering)",
-            "Incident Report #IR-2026-884 (Warehouse Cargo Theft)"
-          ],
+          text: "Welcome to the KSP Crime Intelligence Command Terminal. Ask any question about Karnataka crime data in English, Voice, or Kannada. The system compiles ZCQL, queries live databases, extracts network relationship graphs, and generates instant PDF reports.",
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
     }
   }, [auth.isAuthenticated]);
 
-  const handleLoginSuccess = (username, token, role) => {
-    setAuth({
-      isAuthenticated: true,
-      token,
-      role,
-      username
-    });
+  // After welcome is seeded, fire any pending quick-start query
+  useEffect(() => {
+    if (auth.isAuthenticated && pendingQuery && messages.length === 1) {
+      const query = pendingQuery;
+      setPendingQuery(null);
+      setTimeout(() => handleSendMessage(query), 300);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.isAuthenticated, messages.length, pendingQuery]);
+
+  const handleLoginSuccess = (username, token, role, quickQuery = null) => {
+    setAuth({ isAuthenticated: true, token, role, username });
+    if (quickQuery) setPendingQuery(quickQuery);
   };
 
   const handleLogout = () => {
-    setAuth({
-      isAuthenticated: false,
-      token: null,
-      role: null,
-      username: null
-    });
+    setAuth({ isAuthenticated: false, token: null, role: null, username: null });
     setMessages([]);
     setGraph({ nodes: [], edges: [] });
     setSelectedNode(null);
     setConversationId(null);
+    setPendingQuery(null);
   };
 
   const handleSendMessage = async (text) => {
     if (loading) return;
-    
     setLoading(true);
-    
-    // 1. Add user query to chat log
+
     const userMessage = {
       sender: 'user',
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-    
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      // 2. Fetch answer from single API seam
       const response = await chat(text, conversationId);
-      
-      // 3. Save conversation ID for thread continuity
-      if (response.conversation_id) {
-        setConversationId(response.conversation_id);
+
+      if (response && response.error) {
+        setMessages(prev => [...prev, {
+          sender: 'system',
+          text: "Something went wrong processing that question — try rephrasing it.",
+          zcql_query: null,
+          attempted_query: response.attempted_query || null,
+          sources: [],
+          result_rows: [],
+          pdf_base64: null,
+          isError: true,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        return;
       }
 
-      // 4. Append system response
-      const systemMessage = {
-        sender: 'system',
-        text: response.answer,
-        zcql_query: response.zcql_query,
-        sources: response.sources,
-        result_rows: response.result_rows,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      if (response?.conversation_id) setConversationId(response.conversation_id);
+
+      const hasRows = Array.isArray(response?.result_rows) && response.result_rows.length > 0;
+      const hasSources = Array.isArray(response?.sources) && response.sources.length > 0;
+      let answerText =
+        response?.answer && response.answer.trim() !== ''
+          ? response.answer.trim()
+          : hasRows
+            ? `Retrieved ${response.result_rows.length} database record${response.result_rows.length === 1 ? '' : 's'} matching your query.`
+            : hasSources
+              ? `Found ${response.sources.length} matching source${response.sources.length === 1 ? '' : 's'} in the index.`
+              : "No specific answer was returned. Try rephrasing with specific crime database terms.";
+
+      const newGraph = {
+        nodes: Array.isArray(response?.graph?.nodes) ? response.graph.nodes : [],
+        edges: Array.isArray(response?.graph?.edges) ? response.graph.edges : []
       };
-      
-      setMessages(prev => [...prev, systemMessage]);
+      const graphHasData = newGraph.nodes.length > 0 || newGraph.edges.length > 0;
 
-      // 5. Update active network graph view
-      if (response.graph) {
-        setGraph(response.graph);
-        
-        // Clear inspector details if currently selected node is filtered out
-        if (selectedNode && !response.graph.nodes.some(n => n.id === selectedNode.id)) {
-          setSelectedNode(null);
-        }
+      // Auto-switch to graph tab if graph data arrived!
+      if (graphHasData) {
+        setActiveRightTab('graph');
       }
+
+      setMessages(prev => [...prev, {
+        sender: 'system',
+        text: answerText,
+        zcql_query: response?.zcql_query || null,
+        sources: Array.isArray(response?.sources) ? response.sources : [],
+        result_rows: Array.isArray(response?.result_rows) ? response.result_rows : [],
+        pdf_base64: response?.pdf_base64 || null,
+        hasGraph: graphHasData,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+
+      setGraph(newGraph);
+      if (selectedNode && !newGraph.nodes.some(n => n.id === selectedNode.id)) {
+        setSelectedNode(null);
+      }
+
     } catch (err) {
-      // Handle network errors
-      const errorMessage = {
+      setMessages(prev => [...prev, {
         sender: 'system',
-        text: `Secure decryption failed: ${err.message}. Please check connection variables.`,
+        text: "Something went wrong processing that question — try rephrasing it.",
+        isError: true,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQueryNode = (label) => {
-    handleSendMessage(label);
-  };
+  const hasGraphNodes = Array.isArray(graph?.nodes) && graph.nodes.length > 0;
 
-  // If unauthorized, lock system with the decrypt access login overlay
   if (!auth.isAuthenticated) {
-    return (
-      <LoginForm onLoginSuccess={handleLoginSuccess} />
-    );
+    return <LoginForm onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -163,23 +177,67 @@ function App() {
           onSendMessage={handleSendMessage}
           loading={loading}
         />
-        <div style={{ position: 'relative', height: '100%', width: '100%', overflow: 'hidden' }}>
-          <NetworkGraph
-            graph={graph}
-            onSelectNode={setSelectedNode}
-            selectedNode={selectedNode}
-          />
-          <InspectorPanel
-            selectedNode={selectedNode}
-            activeGraph={graph}
-            onClose={() => setSelectedNode(null)}
-            onQueryNode={handleQueryNode}
-            onSelectNode={setSelectedNode}
-          />
+        
+        {/* Right side analytics panel */}
+        <div className="right-analytics-pane">
+          {/* View Tab Switcher Header */}
+          <div className="right-panel-tab-bar">
+            <button
+              type="button"
+              className={`panel-tab-btn ${activeRightTab === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveRightTab('overview')}
+            >
+              <ShieldCheck size={14} />
+              KSP Overview
+            </button>
+            <button
+              type="button"
+              className={`panel-tab-btn ${activeRightTab === 'graph' ? 'active' : ''}`}
+              onClick={() => setActiveRightTab('graph')}
+            >
+              <Network size={14} />
+              Network Graph {hasGraphNodes && <span className="tab-badge">{graph.nodes.length}</span>}
+            </button>
+            <button
+              type="button"
+              className={`panel-tab-btn ${activeRightTab === 'map' ? 'active' : ''}`}
+              onClick={() => setActiveRightTab('map')}
+            >
+              <MapPin size={14} />
+              Jurisdiction Map
+            </button>
+          </div>
+
+          {/* Active View Content */}
+          <div className="right-panel-content">
+            {activeRightTab === 'overview' ? (
+              <KspOverview onQuickStart={handleSendMessage} />
+            ) : activeRightTab === 'graph' ? (
+              <div style={{ position: 'relative', height: '100%', width: '100%', overflow: 'hidden' }}>
+                <NetworkGraph
+                  graph={graph}
+                  onSelectNode={setSelectedNode}
+                  selectedNode={selectedNode}
+                />
+                <InspectorPanel
+                  selectedNode={selectedNode}
+                  activeGraph={graph}
+                  onClose={() => setSelectedNode(null)}
+                  onQueryNode={handleSendMessage}
+                  onSelectNode={setSelectedNode}
+                />
+              </div>
+            ) : (
+              <KarnatakaMap onSelectDistrict={handleSendMessage} />
+            )}
+          </div>
         </div>
+
       </div>
     </div>
   );
 }
 
 export default App;
+
+

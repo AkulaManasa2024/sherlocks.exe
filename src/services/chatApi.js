@@ -1,7 +1,5 @@
-import { getResponseForQuery } from '../mocks/mockData';
-
-// Configurable base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'mock';
+// Live backend URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ksp-datathon-60078827774.development.catalystserverless.in';
 
 // Storage keys
 const TOKEN_KEY = 'ksp_auth_token';
@@ -80,116 +78,77 @@ async function request(endpoint, options = {}) {
 
 /**
  * Single seam Chat function
- * POST /chat
- * Request: { "question": "string", "conversation_id": "string|null" }
+ * GET /server/nl-query-engine/execute?question=YOUR_QUESTION&conversation_id=OPTIONAL_ID
  */
 export async function chat(question, conversationId = null) {
-  if (API_BASE_URL === 'mock') {
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+  try {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://ksp-datathon-60078827774.development.catalystserverless.in/server/nl-query-engine/execute';
     
-    // Get response from mockData
-    const mockResponse = getResponseForQuery(question);
-    
-    // Structure the response exactly as required by the locked API contract
-    return {
-      conversation_id: conversationId || `conv_${Math.random().toString(36).substr(2, 9)}`,
-      answer: mockResponse.answer,
-      zcql_query: mockResponse.zcql_query,
-      result_rows: mockResponse.result_rows || [],
-      graph: {
-        nodes: (mockResponse.graph?.nodes || []).map(n => ({
-          id: n.id,
-          label: n.label,
-          type: n.type,
-          details: n.details // mock details for inspector
-        })),
-        edges: (mockResponse.graph?.edges || []).map(e => ({
-          source: typeof e.source === 'object' ? e.source.id : e.source,
-          target: typeof e.target === 'object' ? e.target.id : e.target,
-          label: e.label
-        }))
+    const url = new URL(baseUrl);
+    url.searchParams.append('question', question);
+    url.searchParams.append('export_pdf', 'true');
+    if (conversationId) {
+      url.searchParams.append('conversation_id', conversationId);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
       },
-      sources: mockResponse.sources || []
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        error: errorData.error || errorData.message || `Request failed with status ${response.status}`,
+        attempted_query: errorData.attempted_query || null
+      };
+    }
+
+    let data = await response.json();
+
+    // Defensive parsing for double-stringified JSON or { output: "..." } response wrapper
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) {}
+    }
+    if (data && typeof data.output === 'string') {
+      try { data = JSON.parse(data.output); } catch (e) {}
+    }
+
+    return data;
+  } catch (err) {
+    return {
+      error: err.message || 'Network error connecting to backend service.',
+      attempted_query: null
     };
   }
-
-  // Real backend call
-  const response = await request('/chat', {
-    method: 'POST',
-    body: JSON.stringify({ question, conversation_id: conversationId }),
-  });
-  
-  return response.json();
 }
 
 /**
- * Single seam Login function
- * POST /login
- * Request: { "username": "string", "password": "string" }
+ * Demo login — backend has no auth endpoint; we simulate credentials locally.
+ * Role is assigned by username substring for demo purposes.
  */
 export async function login(username, password) {
-  if (API_BASE_URL === 'mock') {
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    
-    // Assign role based on username substring, default to investigator
-    const role = username.toLowerCase().includes('analyst') ? 'analyst' : 'investigator';
-    const mockToken = `mock-jwt-token-for-${username}-${role}-${Date.now()}`;
-    
-    setAuth(mockToken, role, username);
-    return { token: mockToken, role };
-  }
-
-  // Real backend call
-  const response = await fetch(`${API_BASE_URL}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Invalid credentials');
-  }
-
-  const data = await response.json();
-  setAuth(data.token, data.role, username);
-  return data;
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const role = username.toLowerCase().includes('analyst') ? 'analyst' : 'investigator';
+  const token = `ksp-session-${username}-${role}-${Date.now()}`;
+  setAuth(token, role, username);
+  return { token, role };
 }
 
 /**
- * Single seam Export history function
- * GET /export/{conversation_id} -> PDF blob download
+ * Export history — PDF export is now handled inline via pdf_base64 in each chat response.
+ * This function is a fallback that generates a simple summary PDF.
  */
 export async function exportHistory(conversationId) {
-  if (API_BASE_URL === 'mock') {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    
-    // Generate a dummy PDF file content
-    const dummyPdfContent = `%PDF-1.4\n%... KSP Datathon 2026 Export File for Conversation: ${conversationId} ...`;
-    const blob = new Blob([dummyPdfContent], { type: 'application/pdf' });
-    const url = window.URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ksp_export_${conversationId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    return;
-  }
-
-  // Real backend call
-  const response = await request(`/export/${conversationId}`, {
-    method: 'GET',
-  });
-  
-  const blob = await response.blob();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const dummyPdfContent = `%PDF-1.4\n%KSP Datathon 2026 Intelligence Report\n% Conversation: ${conversationId}\n% Note: Full PDF reports are generated per-query via the Download PDF button.`;
+  const blob = new Blob([dummyPdfContent], { type: 'application/pdf' });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `ksp_export_${conversationId}.pdf`;
+  a.download = `ksp_report_${conversationId}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
